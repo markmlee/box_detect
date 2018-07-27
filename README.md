@@ -21,7 +21,7 @@ $ rosrun box_detect box_detect
 
 Maintainers
 ----
-KAIST HUBO LABS - ML634@kaist.ac.kr
+KAIST HUBO LAB - ML634@kaist.ac.kr
 
 
 
