@@ -23,7 +23,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "liftBox/KINECT_DATA.h"
+#include "box_detect/KINECT_DATA.h"
 #include "RBLANData.h"
 
 //OpenCV for image handling
@@ -60,9 +60,9 @@ void*   LANThread(void *);
 
 ros::Publisher      sendKinectData_pub;
 
-liftBox::KINECT_DATA    TXData;
+box_detect::KINECT_DATA    TXData;
 /* Define the global message to send */
-liftBox::KINECT_DATA msg;
+box_detect::KINECT_DATA msg;
 
 int tcp_size = 0;
 int RXDataSize = 0;
@@ -327,7 +327,7 @@ int main(int argc, char **argv)
 {
 
     std::cout << "\033[1;32m=======================================" << std::endl << std::endl;
-    std::cout << "  Node name   : LiftBox" << std::endl << std::endl;
+    std::cout << "  Node name   : box_detect" << std::endl << std::endl;
     std::cout << "  version     : 0.1.0" << std::endl;
     std::cout << "  Author      : MoonYoung Lee (ml634@kaist.ac.kr)" << std::endl;
     std::cout << "  Author      : Yujin Heo (blike4@kaist.ac.kr)" << std::endl << std::endl;
@@ -335,14 +335,14 @@ int main(int argc, char **argv)
     std::cout << "  Step    0   : Connect Kinnect USB " << std::endl << std::endl;
     std::cout << "  Run CMD 1   : $ roscore" << std::endl << std::endl;
     std::cout << "  Run CMD 2   : $ roslaunch freenect_launch freenect.launch" << std::endl << std::endl;
-    std::cout << "  Run CMD 3   : $ rosrun liftBox liftBox" << std::endl << std::endl;
+    std::cout << "  Run CMD 3   : $ rosrun box_detect liftBox" << std::endl << std::endl;
 
 
     std::cout << "=======================================\033[0m" << std::endl;
 
 
     /* Initialize The Node name */
-    ros::init(argc, argv, "liftBox_node");
+    ros::init(argc, argv, "box_detect_node");
 
     /* Define the NodeHandle to communication with ROS system */
     ros::NodeHandle nh;
@@ -351,7 +351,7 @@ int main(int argc, char **argv)
     /* Define Publisher, Message File = liftBox::KINECT_DATA
      * topic name = KINECT_DATA
      * Queue Size = 100 */
-    sendKinectData_pub = nh.advertise<liftBox::KINECT_DATA>("KINECT_DATA", 1000);
+    sendKinectData_pub = nh.advertise<box_detect::KINECT_DATA>("KINECT_DATA", 1000);
 
     /* Loop Cycle = 10Hz = 0.1s */
     ros::Rate loop_rate(10);
@@ -363,7 +363,7 @@ int main(int argc, char **argv)
     {
         ROS_INFO("Created Socket..");
 
-        TXDataSize = sizeof(liftBox::KINECT_DATA);
+        TXDataSize = sizeof(box_detect::KINECT_DATA);
         TXBuffer = (void*)malloc(TXDataSize);
         
         //MOONYOUNG 05.10 
@@ -441,7 +441,7 @@ int Connect2Server(){
     if(connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0){
         return false;
     }
-    std::cout << "Client connect to server!! (LiftBox)" << std::endl;
+    std::cout << "Client connect to server!! (box_detect)" << std::endl;
     return true;
 }
 
