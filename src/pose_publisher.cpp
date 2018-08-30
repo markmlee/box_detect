@@ -33,13 +33,34 @@ int main(int argc, char **argv)
     // Create a ROS publisher for pose
     pub = nh.advertise<geometry_msgs::Pose>("mobile_hubo/goal_pose", 1);
 
-	newgoal.position.x = 3.35;
-	newgoal.position.y = 1.2;
+/*
+	newgoal.position.x = 0.95;
+	newgoal.position.y = -0.5;
+	newgoal.orientation.x=0;
+	newgoal.orientation.y=0;
+	newgoal.orientation.z=0.0;
+	newgoal.orientation.w=1;
+	* start safe
+	*/
+	
+	
+	newgoal.position.x = 3.3;
+	newgoal.position.y = 1.5;
 	newgoal.orientation.x=0;
 	newgoal.orientation.y=0;
 	newgoal.orientation.z=0.707;
 	newgoal.orientation.w=0.707;
-	//90+ degree z 
+	//display pose
+	
+	
+	/*
+	newgoal.position.x = 0;
+	newgoal.position.y = 0;
+	newgoal.orientation.x=0;
+	newgoal.orientation.y=0;
+	newgoal.orientation.z=0;
+	//origin
+	*/
     
     ros::Rate loop_rate(10);
 
