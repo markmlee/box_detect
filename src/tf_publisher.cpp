@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 	tf::TransformListener listener;
 
 
-    ros::Rate loop_rate(10);
+    ros::Rate loop_rate(100);
     
     ros::Subscriber sub = nh.subscribe("/imu", 1000, chatterCallback);
 
