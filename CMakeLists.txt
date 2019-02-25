@@ -7,20 +7,23 @@ find_package( OpenCV 3 REQUIRED )
 find_package(catkin REQUIRED COMPONENTS
   message_generation
   roscpp
+  rospy
   OpenCV
   image_transport
   cv_bridge
   std_msgs
   sensor_msgs
+  geometry_msgs
+  object_detector
   tf
+  
+  
 )
 
 #define message
-add_message_files(FILES KINECT_DATA.msg)
-generate_messages(DEPENDENCIES std_msgs)
 
 #catkin package option
-catkin_package(CATKIN_DEPENDS roscpp std_msgs)
+catkin_package(CATKIN_DEPENDS roscpp rospy std_msgs)
 
 include_directories(
 # include
@@ -74,7 +77,9 @@ target_link_libraries(${PROJECT_NAME}_tf
 
 )
 
-
+#####################################
+# detecting  node for vitamin water  #
+#####################################
 
 add_executable(${PROJECT_NAME}_vitaminwater src/vitaminwater_pose.cpp)
 add_dependencies(${PROJECT_NAME}_vitaminwater ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -83,4 +88,35 @@ target_link_libraries(${PROJECT_NAME}_vitaminwater
     ${catkin_LIBRARIES}
 
 )
+
+#####################################
+# tracking node  #
+#####################################
+
+add_executable(2d_tracking src/2d_tracking.cpp)
+add_dependencies(2d_tracking ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(2d_tracking
+    ${catkin_LIBRARIES}
+
+)
+
+
+
+
+#####################################
+# export data node  #
+#####################################
+
+
+add_executable(${PROJECT_NAME}_exportCSV src/exportCSV.cpp)
+add_dependencies(${PROJECT_NAME}_exportCSV ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(${PROJECT_NAME}_exportCSV
+    ${catkin_LIBRARIES}
+
+)
+
+
+
 

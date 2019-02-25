@@ -23,10 +23,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "liftBox/KINECT_DATA.h"
-#include "RBLANData.h"
+#include "object_detector/bbox2d.h"
 
-#include "object_detector/bbox3d.h"
 
 //matrix transformation
 #include <tf/transform_broadcaster.h>
@@ -57,36 +55,15 @@
 #include <sensor_msgs/PointCloud2.h>
 
 
-#define PODO_ADDR "10.12.3.30"
-#define PODO_PORT 5500
 
-int     CreateSocket(const char *addr, int port);
-int     Connect2Server();
-void*   LANThread(void *);
-
-ros::Publisher      sendKinectData_pub;
-
-liftBox::KINECT_DATA    TXData;
-/* Define the global message to send */
-liftBox::KINECT_DATA msg;
-
-int tcp_size = 0;
-int RXDataSize = 0;
-int sock = 0;
-struct sockaddr_in  server;
-pthread_t LANTHREAD_t;
-int TXDataSize;
-void* TXBuffer;
-void* RXBuffer;
 
 int count = 0;
 //min,max bound for color threshold
-int minH = 11, maxH = 26, minS = 120, maxS = 255, minV = 138, maxV = 212;
+int minH = 11, maxH = 26, minS = 120, maxS = 255, minV = 126, maxV = 212;
 //int minH = 10, maxH = 27, minS = 32, maxS = 255, minV = 129, maxV = 225;
 int boxX = 0;
 int boxY = 0;
 float boxAngle = 0;
-float robotAngle = 0.0;
 
 
 				
@@ -98,7 +75,7 @@ float tunedOffset = -0.35;
 
 #define opening              2
 #define rectangleConst       0
-#define contourAreaThreshold 2000
+#define contourAreaThreshold 100
 #define boxLikeRatio         3.5
 #define centerPixelX         320
 #define centerPixelY         240
@@ -107,12 +84,12 @@ float tunedOffset = -0.35;
 #define twoThirdPixelY       320
 
 
-LAN_PODO2VISION RXdata;
 
-ros::Publisher pub;
+geometry_msgs::Vector3 box_point_msg;
+geometry_msgs::Vector3 track_vel_msg;
 
-    
-
+ros::Publisher box_msg_pub;
+ros::Publisher track_msg_pub;
 
 /* initialize CV Window
  * MOONYOUNG 03.21 */
@@ -142,120 +119,6 @@ void displayImages(cv::Mat image1, cv::Mat image2, cv::Mat image3, cv::Mat image
 
 }
 
-
-
-void boundingbox_cb (object_detector::bbox3dConstPtr const& input)
-{
-	std::cout << "=== handling bounding BOX === " << std::endl;
-	float l0 = 77.19/1000;
-	float l1 = (31.+133.+1075.)/1000;
-	float l2 = 5.5 / 1000;
-	float l3 = 20./1000.;
-	float thetaDegree = -20.;
-	float thetaRad = (thetaDegree/180.0)*3.14159;
-	
-	float x_c = input->centers[0];
-	float y_c = input->centers[1];
-	float z_c = input->centers[2];
-	
-
-	 
-	msg.pos_x = l0 + (l2 * sin(thetaRad) ) + (l3 * cos(thetaRad)) + (y_c*sin(thetaRad)) + (z_c*cos(thetaRad));
-    msg.pos_y = -1*x_c;
-    msg.pos_z = l1 + (l2*cos(thetaRad)) - (l3*sin(thetaRad)) - (y_c*cos(thetaRad)) + (z_c*sin(thetaRad));
-    
-    msg.pos_y = msg.pos_y + 0.02;
-	msg.pos_z = msg.pos_z -0.02;
-    count++;
-  
-    if (count == 10) 
-    {
-		ROS_INFO("base_camera: (%.4f, %.4f. %.4f) -----> base_link: (%.4f, %.4f, %.4f)",
-        x_c, y_c, z_c,
-        msg.pos_x, msg.pos_y, msg.pos_z);
-
-
-		write(sock, &msg, TXDataSize);
-		
-		count = 0;
-	}
-	
-}
-
-void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
-{
-	
- 	
-
-	geometry_msgs::PointStamped base_point;
-	static tf::TransformListener listner;
-    //std::cout << "=== handling pointCloud === " << std::endl;
-
-    int width = input->width;
-    int height = input->height;
-    // printf("cloud width: %u, height: %u, rowstep: %u, pointstep: %u\n" , input->width, input->height, input->row_step, input->point_step);
-    int arrayPosition = boxY*input->row_step + boxX*input->point_step;
-    // printf("position: %u\n" , arrayPosition);
-
-    // compute position in array where x,y,z data start
-      int arrayPosX = arrayPosition + input->fields[0].offset; // X has an offset of 0
-      int arrayPosY = arrayPosition + input->fields[1].offset; // Y has an offset of 4
-      int arrayPosZ = arrayPosition + input->fields[2].offset; // Z has an offset of 8
-
-      float X = 0.0;
-      float Y = 0.0;
-      float Z = 0.0;
-
-      memcpy(&X, &input->data[arrayPosX], sizeof(float));
-      memcpy(&Y, &input->data[arrayPosY], sizeof(float));
-      memcpy(&Z, &input->data[arrayPosZ], sizeof(float));
-
-    //printf("x: %f, y: %f, z: %f\n" , X, Y, Z);
-    geometry_msgs::PointStamped camera_objPose;
-    camera_objPose.header.frame_id = "base_camera";
-    camera_objPose.header.stamp = ros::Time();
-    camera_objPose.point.x = X;
-    camera_objPose.point.y = Y;
-    camera_objPose.point.z = Z;
-
-    /*transform using TF*/
-    
-    try{
-    geometry_msgs::PointStamped base_point;
-    listner.transformPoint("base_link",camera_objPose,base_point);
-
-    ROS_INFO("base_camera: (%.2f, %.2f. %.2f) -----> base_link: (%.2f, %.2f, %.2f)",
-        camera_objPose.point.x, camera_objPose.point.y, camera_objPose.point.z,
-        base_point.point.x, base_point.point.y, base_point.point.z);
-
-    msg.pos_x = base_point.point.x;
-    msg.pos_y = base_point.point.y;
-    msg.pos_z = base_point.point.z;
-    
-
-    count++;
-  
-    if (count == 10) 
-    {
-		//printf("msg.posx = %f, msg.posy = %f, msg.posz = %f\n",msg.pos_x, msg.pos_y, msg.pos_z );
-    
-		write(sock, &msg, TXDataSize);
-		
-		count = 0;
-	}
-   
-
-  
-  }
-  catch(tf::TransformException& ex){
-    ROS_ERROR("Received an exception trying to transform a point from \"base_camera\" to \"base_link\": %s", ex.what());
-  }
-
-
-
-   
-
-}
 
 
 
@@ -313,13 +176,70 @@ void getBoundingBox(std::vector<std::vector<cv::Point> > contourInput, cv::Mat i
 				//darw line from robot origin to box center
 				cv::Point2f robotOrigin(320, 480);
 				cv::Point2f robotOriginText(325, 470);
-				cv::line(imageIn, robotOrigin, box.center, cv::Scalar(255,0,0),3);
-				cv::putText(imageIn, cv::format("%.1f",robotAngle), robotOriginText,  cv::FONT_HERSHEY_COMPLEX_SMALL, 0.8, cv::Scalar(0,0,255), 1);
-				
+				//cv::line(imageIn, robotOrigin, box.center, cv::Scalar(255,0,0),3);
+
+                box_point_msg.x = boxX;
+                box_point_msg.y = boxY;
+                box_msg_pub.publish(box_point_msg);
+
+
+
 				 
             }//end box detected case
         }//end size detected case
     }//end contour loop
+
+
+
+
+
+}
+
+//linearly scale y to Vy 
+//publish vy
+void tracking(float y, float depth)
+{
+
+    float Vy_ref = 0.0; //to publish
+
+    int direction = 1; //+1 if +y (left) -1 if =y (right) 
+
+    if(y < 0) 
+    {
+        direction = -1;
+    }
+
+    float Vymax = 0.25 * direction;
+    float Vymin = 0.0;
+
+    float obj_max_y = 1.0 * direction;
+    float obj_min_y = 0.05 * direction;
+
+    
+    if(depth > 0.3)
+    {
+
+        Vy_ref = ((Vymax - Vymin) * (y - obj_min_y) ) / (obj_max_y -obj_min_y);
+        //printf("y: %f, v_ref: %f\n" , y, Vy_ref);
+
+        track_vel_msg.x = y;
+        track_vel_msg.y = Vy_ref;
+        track_msg_pub.publish(track_vel_msg);
+
+
+    }
+
+    else
+    {
+        Vy_ref = 0;
+        track_vel_msg.x = y;
+        track_vel_msg.y = Vy_ref;
+        track_msg_pub.publish(track_vel_msg);
+
+    }
+
+
+   
 
 
 
@@ -372,6 +292,45 @@ void boxImageHandler(const sensor_msgs::ImageConstPtr& msgInput)
 }
 
 
+void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
+{
+    
+    
+    geometry_msgs::PointStamped base_point;
+    static tf::TransformListener listner;
+    //std::cout << "=== handling pointCloud === " << std::endl;
+
+    int width = input->width;
+    int height = input->height;
+    // printf("cloud width: %u, height: %u, rowstep: %u, pointstep: %u\n" , input->width, input->height, input->row_step, input->point_step);
+    int arrayPosition = boxY*input->row_step + boxX*input->point_step;
+    // printf("position: %u\n" , arrayPosition);
+
+    // compute position in array where x,y,z data start
+      int arrayPosX = arrayPosition + input->fields[0].offset; // X has an offset of 0
+      int arrayPosY = arrayPosition + input->fields[1].offset; // Y has an offset of 4
+      int arrayPosZ = arrayPosition + input->fields[2].offset; // Z has an offset of 8
+
+      float X = 0.0;
+      float Y = 0.0;
+      float Z = 0.0;
+
+      memcpy(&X, &input->data[arrayPosX], sizeof(float));
+      memcpy(&Y, &input->data[arrayPosY], sizeof(float));
+      memcpy(&Z, &input->data[arrayPosZ], sizeof(float));
+
+    //printf("x: %f, y: %f, z: %f\n" , X, Y, Z);
+
+      tracking(-X, Z);
+
+
+
+}
+
+
+
+
+
 
 int main(int argc, char **argv)
 {
@@ -402,44 +361,10 @@ int main(int argc, char **argv)
     
 
 
-    /* Define Publisher, Message File = liftBox::KINECT_DATA
-     * topic name = KINECT_DATA
-     * Queue Size = 100 */
-    sendKinectData_pub = nh.advertise<liftBox::KINECT_DATA>("KINECT_DATA", 1000);
-
     /* Loop Cycle = 10Hz = 0.1s */
     ros::Rate loop_rate(10);
 
-    geometry_msgs::PointStamped base_point;
-tf::TransformListener listner;
-
-
-
-    /* Create Socket */
-
-    if(CreateSocket(PODO_ADDR, PODO_PORT))
-    {
-        ROS_INFO("Created Socket..");
-
-        TXDataSize = sizeof(liftBox::KINECT_DATA);
-        TXBuffer = (void*)malloc(TXDataSize);
-        
-        //MOONYOUNG 05.10 
-        //add IMU data receive for ROS
-        RXDataSize = sizeof(LAN_PODO2VISION);
-        RXBuffer = (void*)malloc(RXDataSize);
-        
-        int threadID = pthread_create(&LANTHREAD_t, NULL, &LANThread, NULL);
-        if(threadID < 0)
-        {
-            ROS_ERROR("Create Thread Error...");
-            return 0;
-        }
-    } else {
-        ROS_ERROR("Create Socket Error..");
-        ROS_ERROR("Terminate Node...");
-        return 0;
-    }
+    
     
     
     //MOONYOUNG 03.21
@@ -447,19 +372,13 @@ tf::TransformListener listner;
 
     //ROS image subscribe
     image_transport::ImageTransport it(nh);
-    //image_transport::Subscriber imageSub = it.subscribe("/camera/color/image_raw", 1, boxImageHandler);
+    image_transport::Subscriber imageSub = it.subscribe("/camera2/color/image_raw", 1, boxImageHandler);
 
+    box_msg_pub = nh.advertise<geometry_msgs::Vector3>("/mobile_hubo/bbox2d", 10);
+    track_msg_pub = nh.advertise<geometry_msgs::Vector3>("/mobile_hubo/track", 10);
 
     // Create a ROS subscriber for the input point cloud
-    //ros::Subscriber sub = nh.subscribe ("/camera/depth_registered/points", 1, cloud_cb);
-
-	// Create a ROS subscriber for the bounding box vision
-    ros::Subscriber sub_box = nh.subscribe ("/hubo_bboxes3d", 1, boundingbox_cb);
-
-
-    // Create a ROS publisher for the output point cloud
-    pub = nh.advertise<sensor_msgs::PointCloud2> ("output", 1);
-
+    ros::Subscriber sub = nh.subscribe ("/camera2/depth_registered/points", 1, cloud_cb);
 
     ros::spin();
 
@@ -476,77 +395,5 @@ tf::TransformListener listner;
 
     return 0;
 }
-
-int CreateSocket(const char *addr, int port){
-    /* Create Socket with TCP
-     * AF_INET = Internet Protocol (TCP/IP)
-     * SOCK_STREAM(TCP), SOCK_DGRAM(UDP), SOCK_RAW(RAW) */
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if(sock == -1){
-        return false;
-    }
-
-    server.sin_addr.s_addr = inet_addr(addr);
-    server.sin_family = AF_INET;
-    server.sin_port = htons(port);
-
-    int optval = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-    setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
-
-    return true;
-}
-
-int Connect2Server(){
-    /*
-     * Connect to PODO server
-     */
-    if(connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0){
-        return false;
-    }
-    std::cout << "Client connect to server!! (LiftBox)" << std::endl;
-    return true;
-}
-
-void* LANThread(void *){
-
-    unsigned int tcp_status = 0x00;
-    int connectCnt = 0;
-
-    while(1){
-        usleep(100);
-        if(tcp_status == 0x00){ // If client was not connected
-            if(sock == 0){
-                CreateSocket(PODO_ADDR, PODO_PORT);
-            }
-            if(Connect2Server()){
-                tcp_status = 0x01;
-                connectCnt = 0;
-            }else{
-                if(connectCnt%10 == 0)
-                    std::cout << "Connect to Server Failed.." << std::endl;
-                connectCnt++;
-            }
-            usleep(1000*1000);
-        }
-        
-        //MOONYOUNG 05.10 read
-        if (tcp_status == 0x01) //connected
-        {
-
-            tcp_size = read(sock, RXBuffer, RXDataSize);
-
-            if( 1 )//tcp_size == RXDataSize)
-            {
-                memcpy(&(RXdata), RXBuffer, RXDataSize);
-                RXdata.CoreData.IMU;
-
-            }
-        }
-    }
-    return NULL;
-}
-
-
 
 

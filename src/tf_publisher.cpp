@@ -29,6 +29,11 @@ float qIMUrawY;
 float qIMUrawZ;
 float qIMUrawW;
 
+tf::StampedTransform transformIMU;
+
+float yawIMU;
+float yawDegreeIMU;
+	  
 /*global var*/
 ros::Time currentTime, beginTime;
 int FPScount = 0;
@@ -41,6 +46,11 @@ void chatterCallback(const sensor_msgs::Imu::ConstPtr& msg)
   qIMUrawZ =msg->orientation.z;
   qIMUrawW =msg->orientation.w;
   
+  tf::Quaternion qIMU(qIMUrawX,qIMUrawY,qIMUrawZ,qIMUrawW);
+  yawIMU = tf::getYaw(qIMU);
+  yawDegreeIMU = yawIMU*180/3.14;
+  
+  
 }
 
 
@@ -48,7 +58,7 @@ int main(int argc, char **argv)
 {
 
 	outputFile.open("tfOutput.csv");
-	outputFile << "X" << "," <<  "Y" << "," <<  "Z" << "," << "yaw" << "imuX" << "," <<  "imuY" << "," <<  "imuZ" << "," <<  "imuW" << "," <<std::endl;
+	outputFile << "X" << "," <<  "Y" << "," <<  "Z" << "," << "yaw_robot" << "," << "yaw_imu" << "," <<std::endl;
 	
     //initialize node boxDetect
     ros::init(argc,argv, "tf_publisher");
@@ -112,8 +122,8 @@ int main(int argc, char **argv)
 	
 		//ROS_INFO("x: %f, y: %f, z: %f\n",tfPose.position.x,tfPose.position.y,tfPose.position.z);
 		//outputFile << tfPose.position.x << "," <<  tfPose.position.y << "," <<  tfPose.position.z << "," << std::endl;
-		ROS_INFO("x: %f, y: %f, z: %f yaw: %f\n",tfPose.position.x,tfPose.position.y,tfPose.position.z, yawDegree); 
-		outputFile << tfPose.position.x << "," <<  tfPose.position.y << "," <<  tfPose.position.z << "," << yawDegree<< ","<<  qIMUrawW<< ","<< qIMUrawX<< ","<< qIMUrawY<< ","<< qIMUrawZ<< ","<<std::endl;
+		ROS_INFO("x: %.3f, y: %.3f, z: %.3f yaw_robot: %.2f, yaw_imu: %2.f\n",tfPose.position.x,tfPose.position.y,tfPose.position.z, yawDegree,yawDegreeIMU); 
+		outputFile << tfPose.position.x << "," <<  tfPose.position.y << "," <<  tfPose.position.z << "," << yawDegree<< ","<<  yawDegreeIMU<<  ","<<std::endl;
 	}
 
     pub.publish(tfPose);
