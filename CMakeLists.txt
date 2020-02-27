@@ -31,15 +31,15 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
 )
 
-add_executable(${PROJECT_NAME} src/liftBox_node.cpp)
+#add_executable(${PROJECT_NAME} src/liftBox_node.cpp)
 
-add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+#add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-target_link_libraries(${PROJECT_NAME}
-    ${catkin_LIBRARIES}
-    ${OpenCV_LIBRARIES}
-    ${OpenCV_LIBS}
-)
+#target_link_libraries(${PROJECT_NAME}
+#    ${catkin_LIBRARIES}
+#    ${OpenCV_LIBRARIES}
+#    ${OpenCV_LIBS}
+#)
 
 
 add_executable(${PROJECT_NAME}_tuning src/boxDetect_tuning.cpp)
@@ -85,6 +85,17 @@ add_executable(${PROJECT_NAME}_vitaminwater src/vitaminwater_pose.cpp)
 add_dependencies(${PROJECT_NAME}_vitaminwater ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 target_link_libraries(${PROJECT_NAME}_vitaminwater
+    ${catkin_LIBRARIES}
+
+)
+
+#####################################
+# detecting  node for vitamin water  #
+#####################################
+add_executable(green_plane_pose src/green_plane_pose.cpp)
+add_dependencies(green_plane_pose ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(green_plane_pose
     ${catkin_LIBRARIES}
 
 )
