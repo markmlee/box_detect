@@ -17,6 +17,7 @@
 #include <std_msgs/String.h>
 #include <sstream>
 #include <iostream>
+#include <string> 
 
 #include <stdio.h>
 #include <sys/socket.h>
@@ -117,7 +118,6 @@ LAN_PODO2VISION RXdata;
 
 ros::Publisher pub;
 
-    
 // Global variable for subscribing the data
 int numPlanningSteps = 0; 
 geometry_msgs::PoseArray stepsArray_pixel;
@@ -163,7 +163,7 @@ void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
  	
 
 	geometry_msgs::PointStamped base_point;
-	static tf::TransformListener listner;
+	//static tf::TransformListener listner;
     //std::cout << "=== handling pointCloud === " << std::endl;
     
     if(numPlanningSteps < 1) return;
@@ -192,7 +192,7 @@ void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
       memcpy(&Y, &input->data[arrayPosY], sizeof(float));
       memcpy(&Z, &input->data[arrayPosZ], sizeof(float));
 
-		printf("step : %d, x: %f, y: %f, z: %f\n" , i, X, Y, Z);
+		//printf("step : %d, x: %f, y: %f, z: %f\n" , i, X, Y, Z);
 		
 		//add pose to stepArray
 		geometry_msgs::Pose step_pose;
@@ -203,68 +203,13 @@ void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
 		
 		stepsArray_pose.poses.push_back(step_pose);
 		
+		
+		
 	}
-    
-    //publish marker
-    // Marker for foot step visualization
-        visualization_msgs::MarkerArray markerArray;
-
-		//delete old
-        for(int i = 0; i < stepsArray_pixel.poses.size(); i++){
-            visualization_msgs::Marker marker;
-            marker.header.stamp = ros::Time::now();
-            marker.ns = "foot_step";
-            marker.id = i;
-            marker.type = visualization_msgs::Marker::CUBE;
-            marker.action = visualization_msgs::Marker::DELETEALL;
-            marker.lifetime = ros::Duration();
-
-            markerArray.markers.push_back(marker);
-        }
-		//add new
-        for(int i = 0; i < stepsArray_pixel.poses.size(); i++){
-            visualization_msgs::Marker marker;
-            marker.header.stamp = ros::Time::now();
-            marker.header.frame_id = "world";
-            marker.ns = "foot_step";
-            marker.id = i;
-            marker.type = visualization_msgs::Marker::CUBE;
-            marker.action = visualization_msgs::Marker::ADD;
-            marker.pose = stepsArray_pose.poses[i];
-            marker.scale.x = 0.3;
-            marker.scale.y = 0.3;
-            marker.scale.z = 0.01;
-            marker.color.r = 0.2f;
-            marker.color.g = 1.0f;
-            marker.color.b = 0.05f;
-            marker.color.a = 1.f;
-            marker.lifetime = ros::Duration();
-
-            markerArray.markers.push_back(marker);
-        }
+	
+	
         
-        //std::cout << "size of marker array: " << markerArray.markers.size() << std::endl;
-        marker_publisher.publish(markerArray);
         
-    
-    
-    //remove from vector after publish to prevent infinitely increasing
-    while (!stepsArray_pixel.poses.empty())
-		  {
-			stepsArray_pixel.poses.pop_back();
-		  }
-		  
-		  while (!stepsArray_pose.poses.empty())
-		  {
-			stepsArray_pose.poses.pop_back();
-		  }
-		  
-	//flag to prevent camera callback repeating
-	pcloud_callback_done = true;
-		  
-		 
-
-   
 
     
     //geometry_msgs::PointStamped camera_objPose;
@@ -404,12 +349,13 @@ void boxImageHandler(const sensor_msgs::ImageConstPtr& msgInput)
 	if (!pcloud_callback_done) return;
 
 /* Create tf broadcaster for camera to base link*/
+/*
     static tf::TransformBroadcaster broadcaster;
-    	broadcaster.sendTransform( tf::StampedTransform( /*90+10deg pitch camera (30 but offset)*/
+    	broadcaster.sendTransform( tf::StampedTransform( //90+10deg pitch camera (30 but offset)
          tf::Transform(tf::createQuaternionFromRPY(120*3.14/180, 0, 90*3.14/180), tf::Vector3(0.0, 0.0, 1.25)),
          //tf::Transform(tf::Quaternion( -0.5, -0.5, 0.5, 0.5), tf::Vector3(0.0, 0.0, 1.25)),
          ros::Time::now(),"base_link", "base_camera"));
-
+*/
 
     //convert ROS image to OpenCV img pixel encoding
     cv_bridge::CvImageConstPtr cv_ptr;
@@ -466,7 +412,18 @@ int main(int argc, char **argv)
     ros::Rate loop_rate(10);
 
     geometry_msgs::PointStamped base_point;
-	tf::TransformListener listner;
+    
+    //TF initialize
+	tf::TransformListener tf_listener;
+	tf::TransformBroadcaster br;
+	
+	//Create Matrix3x3 from Euler Angles
+	tf::Matrix3x3 cam_base_rotation;
+	cam_base_rotation.setEulerYPR(0, 0, 0);
+	tf::Quaternion quat_cam_base;
+	cam_base_rotation.getRotation(quat_cam_base);
+
+
 
 
     //MOONYOUNG 03.21
@@ -475,6 +432,9 @@ int main(int argc, char **argv)
     //ROS image subscribe
     image_transport::ImageTransport it(nh);
     image_transport::Subscriber imageSub = it.subscribe("/camera/color/image_raw", 1, boxImageHandler);
+    
+    //tf listener for transform
+     tf::TransformListener listener(ros::Duration(10)); //cache time
 
 
     // Create a ROS subscriber for the input point cloud
@@ -483,15 +443,117 @@ int main(int argc, char **argv)
     marker_publisher = nh.advertise<visualization_msgs::MarkerArray>("mobile_hubo/step_markers", 1);
 
 
-    ros::spin();
 
     /* spin */
     while(nh.ok())
     {
+		
+		//enter if processed steps
+		if (numPlanningSteps > 0) 
+		{
+			
+			//lookup tranform between cam and base_link frame
+			tf::StampedTransform transform;
+			try{
+			  listener.lookupTransform("/camera_depth_optical_frame", "/base_link",  
+									   ros::Time(0), transform);
+			}
+			catch (tf::TransformException ex){
+			  ROS_ERROR("%s",ex.what());
+			  ros::Duration(1.0).sleep();
+			}
+						
+			//std::cout << "inside while loop to publish TF "<< std::endl;
+			 
+			 //create marker array
+			 visualization_msgs::MarkerArray markerArray;
+			 
+			 //delete old markers
+			for(int i = 0; i < stepsArray_pixel.poses.size(); i++){
+				visualization_msgs::Marker marker;
+				marker.header.stamp = ros::Time::now();
+				marker.ns = "foot_step";
+				marker.id = i;
+				marker.type = visualization_msgs::Marker::CUBE;
+				marker.action = visualization_msgs::Marker::DELETEALL;
+				marker.lifetime = ros::Duration();
 
+				markerArray.markers.push_back(marker);
+			}
+			
+        
+			//publish tf and marker for each step
+			for(int i = 0; i < stepsArray_pose.poses.size(); i ++ ) 
+			{
+				
+				//TF broadcasting
+				ros::Time now = ros::Time::now();
+				tf::Transform tf_cam_steps;
+
+			  
+				tf_cam_steps.setOrigin(tf::Vector3(stepsArray_pose.poses[i].position.x,stepsArray_pose.poses[i].position.y, stepsArray_pose.poses[i].position.z));
+				tf_cam_steps.setRotation(transform.getRotation());
+				
+				std::stringstream step_name;
+				step_name << "step_" << i;
+
+				br.sendTransform(tf::StampedTransform(tf_cam_steps, ros::Time::now(), "/camera_depth_optical_frame", step_name.str()));
+				std::cout << "broadcasted "<< std::endl;
+				
+				//add marker
+				visualization_msgs::Marker marker;
+				marker.header.stamp = ros::Time::now();
+				marker.header.frame_id = step_name.str();
+				marker.ns = "foot_step";
+				marker.id = i;
+				marker.type = visualization_msgs::Marker::CUBE;
+				marker.action = visualization_msgs::Marker::ADD;
+				//marker.pose = stepsArray_pose.poses[i];
+				marker.scale.x = 0.3;
+				marker.scale.y = 0.3;
+				marker.scale.z = 0.01;
+				marker.color.r = 0.2f;
+				marker.color.g = 1.0f;
+				marker.color.b = 0.05f;
+				marker.color.a = 1.f;
+				marker.lifetime = ros::Duration();
+
+				markerArray.markers.push_back(marker);
+            
+				
+			}
+
+        
+        //std::cout << "size of marker array: " << markerArray.markers.size() << std::endl;
+        
+        marker_publisher.publish(markerArray);
+        
+		
+			
+        
+		}
+		
+		
+		 //remove from vector after publish to prevent infinitely increasing
+			while (!stepsArray_pixel.poses.empty())
+		  {
+			stepsArray_pixel.poses.pop_back();
+		  }
+		  
+		  while (!stepsArray_pose.poses.empty())
+		  {
+			stepsArray_pose.poses.pop_back();
+		  }
+		  
+		//flag to prevent camera callback repeating
+		pcloud_callback_done = true;
+		  
+		
+		
 
         //MOONYOUNG 03.21
         loop_rate.sleep(); // Go to sleep according to the loop period defined above.
+        ros::spinOnce();
  
     }
 
