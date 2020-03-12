@@ -22,6 +22,9 @@
 #include "tf/transform_datatypes.h"
 
 #include <fstream>
+#include <cmath>
+#include "geometry_msgs/Point.h"
+#include "geometry_msgs/PoseArray.h"
 
 #define R2D			5.729577951308232e1
 ros::Publisher pub;
@@ -59,6 +62,11 @@ float v_ref[2] = {};
 /*global var*/
 ros::Time currentTime, beginTime;
 int FPScount = 0;
+
+// Global variable for subscribing the data
+geometry_msgs::Pose robot_pose;
+
+geometry_msgs::PoseArray stepsArray_pose;
 
 void callback3DM (const geometry_msgs::Vector3Stamped& msg)
 {
@@ -175,6 +183,44 @@ void callback_vref(const geometry_msgs::Vector3& msg)
 
 }
 
+void callback_tf(const tf2_msgs::TFMessage::ConstPtr& _msg)
+{
+    // Convert tf2_msgs to geometry_msgs::Pose
+    for(int i = 0; i < _msg->transforms.size(); i++){
+        if(std::string("t265_pose_frame").compare(_msg->transforms.at(i).child_frame_id) == 0){
+            robot_pose.position.x = _msg->transforms.at(i).transform.translation.x;
+            robot_pose.position.y = _msg->transforms.at(i).transform.translation.y;
+            robot_pose.position.z = _msg->transforms.at(i).transform.translation.z;
+
+        }
+        
+        //ROS_INFO("looking for TF step to match \n");
+        /*
+        for(int k =0 ; k < 4; k++) {
+			std::stringstream step_name;
+				step_name << "step_" << k;
+        
+			if((step_name.str()).compare(_msg->transforms.at(i).child_frame_id) == 0){
+				
+				//ROS_INFO("found TF w same name\n");
+				ROS_INFO("TF step: %d, X: %f, Y: %f\n",i  ,_msg->transforms.at(i).transform.translation.x ,_msg->transforms.at(i).transform.translation.y);
+				geometry_msgs::Pose step_pose;
+				
+				step_pose.position.x = _msg->transforms.at(i).transform.translation.x;
+				step_pose.position.y = _msg->transforms.at(i).transform.translation.y;
+				step_pose.position.z = _msg->transforms.at(i).transform.translation.z;
+				
+				stepsArray_pose.poses.push_back(step_pose);
+
+			}
+			
+		}*/
+        
+        
+    }
+
+//    std::cout << "Set start pose" << std::endl;
+}
 
 int main(int argc, char **argv)
 {
@@ -182,8 +228,10 @@ int main(int argc, char **argv)
 //	outputFile.open("imuCompare.csv");
 //	outputFile << "Roll_3DM" << "," << "Pitch_3DM" << ","  << "Yaw_3DM" << "," << "Roll_16480" << "," <<  "Pitch_16480" << "," <<  "Yaw_16480" << ","  <<"Roll_435i" << "," << "Pitch_435i" << ","  << "Yaw_435i" << std::endl;
 	
-	outputFile.open("vref.csv");
-	outputFile << "boxX" << "," << "boxY" << "," << "y_dist" << "," << "vy_ref" << std::endl;
+	outputFile.open("/home/rainbow/Desktop/step_position.csv");
+	outputFile << "Time" << "," << "comX" << "," << "comY" << "," << "comZ" << "," << "step0_X" << "," << "step0_Y" << "," << "step1_X" << "," << "step1_Y" << "," <<  
+	"step2_X"<< "," << "step2_Y" << "," << "step3_X"<< "," << "step3_Y" << "," << "step4_X"<< "," << "step4_Y" << "," << "step5_X"<< "," <<"step5_Y" << "," << 
+	"step6_X"<< "," << "step6_Y" << "," << "step7_X"<< "," << "step7_Y" << "," << "step8_X"<< "," << "step8_Y" <<  std::endl;
 	
 
 	//raw data
@@ -198,6 +246,9 @@ int main(int argc, char **argv)
     ros::init(argc,argv, "exportCSV");
 
     ros::NodeHandle nh;
+    
+    tf::TransformListener listener;
+
    
 
 
@@ -211,15 +262,44 @@ int main(int argc, char **argv)
     //ros::Subscriber sub3 = nh.subscribe("/camera/imu", 10, callbackD435i_raw);
    // ros::Subscriber sub2 = nh.subscribe("/mobile_hubo/imuvel", 10, callback16480_raw);
    
-    ros::Subscriber sub = nh.subscribe("/mobile_hubo/bbox2d", 10, callback_boxPt);
-	ros::Subscriber sub2 = nh.subscribe("/mobile_hubo/track", 10, callback_vref);
+	ros::Subscriber sub2 = nh.subscribe("/tf", 10, callback_tf);
+	
+	ros::Time step_start = ros::Time::now();
 
     
   while (ros::ok())
   {
-	
-  
+	  
+	  //output to CSV
+	ros::Time step_end = ros::Time::now();
+	double step_planning_time = (step_end - step_start).toSec();
+			
+	outputFile << step_planning_time << "," <<  robot_pose.position.x << "," <<  robot_pose.position.y << "," << robot_pose.position.z << "," ; 		
+			
+	  //loop over steps
+	  for(int k =0 ; k < 4; k++) {
+			std::stringstream step_name;
+				step_name << "step_" << k;
+				
+		  //Get Transform
+		  tf::StampedTransform transform;
+			try{
+			  listener.lookupTransform("/world", step_name.str(),   
+									   ros::Time(0), transform);
+									   
+			ROS_INFO("step: %d, X: %f, Y: %f\n",k  ,transform.getOrigin().x() ,transform.getOrigin().y() );
+			outputFile << transform.getOrigin().x() << "," << transform.getOrigin().y()  << ",";
 
+									   
+			}
+			catch (tf::TransformException ex){
+			  ROS_ERROR("%s",ex.what());
+			  ros::Duration(0.01).sleep();
+			}
+    
+		}
+		
+		outputFile << std::endl;
 		
 		//outputFile << roll_a << "," <<  pitch_a << "," <<  yaw_a << "," << roll_b << "," <<  pitch_b << "," <<  yaw_b<< "," << roll_c << "," <<  pitch_c << "," <<  yaw_c <<std::endl;
 		//ROS_INFO("r: %.3f, p: %.3f, y: %.3f, r: %.3f, p: %.3f, y: %.3f, r: %.3f, p: %.3f, y: %.3f\n", roll_a, pitch_a, yaw_a, roll_b, pitch_b, yaw_b, roll_c, pitch_c, yaw_c); 
@@ -232,8 +312,36 @@ int main(int argc, char **argv)
 		<< bmi_ang_vel[0] << "," <<  bmi_ang_vel[1] << "," <<  bmi_ang_vel[2] << "," << bmi_lin_acc[0] << "," <<  bmi_lin_acc[1] << "," <<  bmi_lin_acc[2]
 		<< std::endl;
 */
-
-		outputFile << box[0] << "," <<  box[1] << "," <<  v_ref[0] << "," << v_ref[1] << std::endl;
+		
+		
+		/*
+		if((stepsArray_pose.poses.size()) > 0){
+			ROS_INFO("recording data \n");
+			
+			outputFile << step_planning_time << "," <<  robot_pose.position.x << "," <<  robot_pose.position.y << "," << robot_pose.position.z << "," ; 
+			
+			
+			for(int i =0; i < stepsArray_pose.poses.size(); i ++) {
+				outputFile << stepsArray_pose.poses[i].position.x << "," << stepsArray_pose.poses[i].position.y ;
+				
+				ROS_INFO("step: %d, X: %f, Y: %f\n",i  ,stepsArray_pose.poses[i].position.x ,stepsArray_pose.poses[i].position.y);
+			}
+			
+			//stepsArray_pose.poses[0].position.x << "," << stepsArray_pose.poses[0].position.y  << "," <<
+			//stepsArray_pose.poses[1].position.x << "," << stepsArray_pose.poses[1].position.y  << "," <<
+			//stepsArray_pose.poses[2].position.x << "," << stepsArray_pose.poses[2].position.y  << "," <<
+			//stepsArray_pose.poses[3].position.x << "," << stepsArray_pose.poses[3].position.y  << "," <<
+			outputFile << std::endl;
+		
+		}
+		
+		//remove from vector after publish to prevent infinitely increasing
+			while (!stepsArray_pose.poses.empty())
+		  {
+			stepsArray_pose.poses.pop_back();
+		  }
+		*/
+		
 
 
 

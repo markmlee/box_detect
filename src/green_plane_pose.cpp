@@ -18,11 +18,12 @@
 #include <sstream>
 #include <iostream>
 #include <string> 
+#include <fstream>
 
 #include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-
+#include <vector> 
 //#include "liftBox/KINECT_DATA.h"
 #include "RBLANData.h"
 
@@ -74,6 +75,7 @@ ros::Publisher 		marker_publisher;
 //liftBox::KINECT_DATA    TXData;
 /* Define the global message to send */
 //liftBox::KINECT_DATA msg;
+std::ofstream outputFile;
 
 int tcp_size = 0;
 int RXDataSize = 0;
@@ -101,18 +103,19 @@ float cameraAngle = 35;
 float cameraRad = cameraAngle*3.14/180.0;
 float tunedOffset = -0.35;
 
+bool first_detect_flag = true;
 
 #define opening              2
 #define rectangleConst       0
 #define contourAreaThreshold 5000
-#define boxLikeRatioMax      3.0
-#define boxLikeRatioMin      0.3
+#define boxLikeRatioMax      2.0
+#define boxLikeRatioMin      0.5
 #define centerPixelX         320
 #define centerPixelY         240
 #define oneThirdPixelX       210
 #define twoThirdPixelX       420
 #define twoThirdPixelY       320
-
+#define plane_distance_threshold 0.15
 
 LAN_PODO2VISION RXdata;
 
@@ -122,6 +125,8 @@ ros::Publisher pub;
 int numPlanningSteps = 0; 
 geometry_msgs::PoseArray stepsArray_pixel;
 geometry_msgs::PoseArray stepsArray_pose;
+geometry_msgs::PoseArray stepsArray_pose_mean;
+std::vector<geometry_msgs::PoseArray> stepsArray_filtered (0);
 
 bool pcloud_callback_done = true;
 
@@ -154,8 +159,16 @@ void displayImages(cv::Mat image1, cv::Mat image2, cv::Mat image3, cv::Mat image
 }
 
 
-
-
+//returns euclidian distance between two pts to compare if within near distance
+float get_distance_twoPts(geometry_msgs::Pose input_a, geometry_msgs::Pose input_b)
+{
+	//ROS_INFO("a.x: %f, b.x: %f\n", input_a.position.x, input_b.position.x);
+	float distance;
+	
+	distance =  pow( (pow( (input_a.position.x - input_b.position.x),2) + pow( (input_a.position.y - input_b.position.y),2)) , 0.5);
+	return distance;
+	
+}
 
 void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
 {
@@ -201,60 +214,35 @@ void cloud_cb (sensor_msgs::PointCloud2ConstPtr const& input)
 		step_pose.position.y = Y;
 		step_pose.position.z = Z;
 		
-		stepsArray_pose.poses.push_back(step_pose);
+		stepsArray_pose.poses.push_back(step_pose);	
 		
+		//first time adding to vector
+		//ROS_INFO("Filterarray size: %d\n",stepsArray_filtered.size());
+		/*
+		if(first_detect_flag) {
+			
+			geometry_msgs::PoseArray temp_stepArray;
+			temp_stepArray.poses.push_back(step_pose);	
+			//ROS_INFO("Adding new elem\n");
+			stepsArray_filtered.push_back(temp_stepArray);
+		}
 		
+		//check w exisiting step value and place into near value position
+		
+		else {
+			float distance	 = get_distance_twoPts(step_pose, stepsArray_filtered[0].poses[0]);
+			//stepsArray_filtered[i].poses.push_back(step_pose);
+			//ROS_INFO("filterArray Index: %d, size %d\n",i,stepsArray_filtered[i].poses.size());
+			
+		}
 		
 	}
 	
-	
+	ROS_INFO("END Filterarray size: %d\n",stepsArray_filtered.size());
+	first_detect_flag = false;
         
-        
-
-    
-    //geometry_msgs::PointStamped camera_objPose;
-    //camera_objPose.header.frame_id = "base_camera";
-    //camera_objPose.header.stamp = ros::Time();
-    //camera_objPose.point.x = X;
-    //camera_objPose.point.y = Y;
-    //camera_objPose.point.z = Z;
-
-    ///*transform using TF*/
-    
-    //try{
-    //geometry_msgs::PointStamped base_point;
-    //listner.transformPoint("base_link",camera_objPose,base_point);
-
-    ////ROS_INFO("base_camera: (%.2f, %.2f. %.2f) -----> base_link: (%.2f, %.2f, %.2f)",
-        //camera_objPose.point.x, camera_objPose.point.y, camera_objPose.point.z,
-        //base_point.point.x, base_point.point.y, base_point.point.z);
-
-    ////msg.pos_x = base_point.point.x;
-    ////msg.pos_y = base_point.point.y;
-   //// msg.pos_z = base_point.point.z;
-    
-
-    //count++;
-  
-    //if (count == 10) 
-    //{
-		////printf("msg.posx = %f, msg.posy = %f, msg.posz = %f\n",msg.pos_x, msg.pos_y, msg.pos_z );
-    
-		////write(sock, &msg, TXDataSize);
-		
-		//count = 0;
-	//}
-   
-
-  
-  //}
-  //catch(tf::TransformException& ex){
-    //ROS_ERROR("Received an exception trying to transform a point from \"base_camera\" to \"base_link\": %s", ex.what());
-  //}
-
-
-
-   
+        */
+	}
 
 }
 
@@ -296,6 +284,11 @@ void getBoundingBox(std::vector<std::vector<cv::Point> > contourInput, cv::Mat i
             
             //std::cout << "height: " << height << std::endl;
             //std::cout << "width: " << width << std::endl;
+            double ratio_hor = height/width;
+            double ratio_ver = width/height;
+            
+            //ROS_INFO("h: %f, w: %f, h/w: %f, w/h: %f\n",height, width, ratio_hor, ratio_ver);
+
 
             //if boundingBox has width/height ratio like box
             if( ((height / width) < boxLikeRatioMax) && ((height / width) > boxLikeRatioMin) )
@@ -390,13 +383,38 @@ void boxImageHandler(const sensor_msgs::ImageConstPtr& msgInput)
 }
 
 
+void output_plot()
+{
+	outputFile.open("/home/rainbow/Desktop/step_position_plot.csv");
+			
+			for(int i = 0 ; i < 300; i ++) {
+				
+				for(int j=0; j < stepsArray_filtered.size(); j ++) {
+					
+					if( i < stepsArray_filtered[j].poses.size() ) {
+						//add
+						outputFile << stepsArray_filtered[j].poses[i].position.x <<  "," << stepsArray_filtered[j].poses[i].position.y << "," ;
+					}
+					else {
+						//skip
+						
+						outputFile << "," << ",";
+					}
+					
+					
+				}
+				outputFile << std::endl;
+			}
+			
+	ROS_INFO("================================================================");
+}
 
 int main(int argc, char **argv)
 {
 
     std::cout << "\033[1;32m=======================================" << std::endl << std::endl;
     std::cout << "  Node name   : Green Detector" << std::endl << std::endl;
-    std::cout << "  version     : 0.1.0" << std::endl;
+    std::cout << "  version     : 1.0.0" << std::endl;
     std::cout << "  Author      : MoonYoung Lee (ml634@kaist.ac.kr)" << std::endl;
 
     std::cout << "=======================================\033[0m" << std::endl;
@@ -441,7 +459,10 @@ int main(int argc, char **argv)
     ros::Subscriber sub = nh.subscribe ("/camera/depth_registered/points", 1, cloud_cb);
     
     marker_publisher = nh.advertise<visualization_msgs::MarkerArray>("mobile_hubo/step_markers", 1);
-
+    
+    
+	bool plot_flag = false;
+	bool stop_plot = false;
 
 
     /* spin */
@@ -460,7 +481,7 @@ int main(int argc, char **argv)
 			}
 			catch (tf::TransformException ex){
 			  ROS_ERROR("%s",ex.what());
-			  ros::Duration(1.0).sleep();
+			  ros::Duration(0.1).sleep();
 			}
 						
 			//std::cout << "inside while loop to publish TF "<< std::endl;
@@ -482,6 +503,7 @@ int main(int argc, char **argv)
 			}
 			
         
+			
 			//publish tf and marker for each step
 			for(int i = 0; i < stepsArray_pose.poses.size(); i ++ ) 
 			{
@@ -498,7 +520,7 @@ int main(int argc, char **argv)
 				step_name << "step_" << i;
 
 				br.sendTransform(tf::StampedTransform(tf_cam_steps, ros::Time::now(), "/camera_depth_optical_frame", step_name.str()));
-				std::cout << "broadcasted "<< std::endl;
+				//std::cout << "broadcasted "<< std::endl;
 				
 				//add marker
 				visualization_msgs::Marker marker;
@@ -528,10 +550,130 @@ int main(int argc, char **argv)
         
         marker_publisher.publish(markerArray);
         
+		}
+		
+		//============== get TF of steps in world frame, and filter, and publish TF ==========================
+		
+		//loop over steps
+		for(int k =0 ; k < stepsArray_pose.poses.size(); k++) {
+			bool found_match = false;
+			std::stringstream step_name;
+				step_name << "step_" << k;
+				
+		  //Get Transform
+		  tf::StampedTransform transform;
+			try{
+			  listener.lookupTransform("/world", step_name.str(),   
+									   ros::Time(0), transform);
+			
+			geometry_msgs::Pose temp_tf_pose;
+			temp_tf_pose.position.x = transform.getOrigin().x();
+			temp_tf_pose.position.y = transform.getOrigin().y();
+									   
+			//ROS_INFO("step: %d, X: %f, Y: %f\n",k  ,transform.getOrigin().x() ,transform.getOrigin().y() );
+			
+			//1st detect
+			if(first_detect_flag) {
+			
+				geometry_msgs::PoseArray temp_stepArray;
+				temp_stepArray.poses.push_back(temp_tf_pose);	
+				stepsArray_filtered.push_back(temp_stepArray);
+				ROS_INFO("adding new to filter array! Now size is: %lu\n", stepsArray_filtered.size());
+				
+				//initial condition. add 1st pose to mean array
+				stepsArray_pose_mean.poses.push_back(temp_tf_pose);
+			}
+		
+			//check w exisiting step value and place into near value position
+		
+			else {
+				
+				//loop over currently detected steps to match new & old
+				for(int j = 0; j <  stepsArray_filtered.size(); j++){
+					
+					//ROS_INFO("size of k: %d, size of j %d\n", stepsArray_pose.poses.size(), stepsArray_filtered.size() );
+					
+					float distance = get_distance_twoPts(temp_tf_pose, stepsArray_pose_mean.poses[j]); //should switch to median filter val
+					
+					//ROS_INFO("NewStep[%d] FilterStep[%d], distance: %f\n ",k, j, distance);
+					
+					//if close enough, then add to corresponding old step
+					if(distance < plane_distance_threshold){
+						stepsArray_filtered[j].poses.push_back(temp_tf_pose);
+						//ROS_INFO("FOUND MATCH! Adding to filterArray index: %d, size is now %lu\n",j,stepsArray_filtered[j].poses.size());
+						found_match = true;
+						break; //since detected TF step with old step val
+
+					}
+															
+				}//end of stepArrayFilter For Loop
+				
+				if(found_match == false) //
+				{
+					geometry_msgs::PoseArray temp_stepArray;
+					temp_stepArray.poses.push_back(temp_tf_pose);	
+					stepsArray_filtered.push_back(temp_stepArray);
+					ROS_INFO("adding new to filter array! Now size is: %lu\n", stepsArray_filtered.size());
+				}
+				
+
+				
+					
+			}//end of existing step checking
+									   
+		}//end of try for each TF step val
+
+			catch (tf::TransformException ex){
+			  ROS_ERROR("MAIN LOOP: Getting TF: %s",ex.what());
+			  ros::Duration(0.01).sleep();
+			}
+    
+		}//end of TF stepArray pose for loop
+		
+		
+		//prevent flag from turning off before adding
+		if(stepsArray_filtered.size() > 0)
+		{
+			ROS_INFO("END Filterarray size: %lu\n",stepsArray_filtered.size());
+			for(int i = 0; i <  stepsArray_filtered.size(); i++){
+				//ROS_INFO("END filterArray Index: %d, size %lu\n",i,stepsArray_filtered[i].poses.size());
+				
+				//determine average of ArrayFilter[i]
+				geometry_msgs::Pose temp_avg_pose;
+				float sumX = 0;
+				float sumY = 0;
+				for(int k = 0; k < stepsArray_filtered[i].poses.size(); k++) {
+					sumX = sumX + stepsArray_filtered[i].poses[k].position.x;
+					sumY = sumY + stepsArray_filtered[i].poses[k].position.y;
+				}
+				
+				temp_avg_pose.position.x = sumX/stepsArray_filtered[i].poses.size();
+				temp_avg_pose.position.y = sumY/stepsArray_filtered[i].poses.size();
+				
+				stepsArray_pose_mean.poses.push_back(temp_avg_pose);
+				ROS_INFO("END MeanArray Index: %d, uX: %f, uY: %f\n",i,stepsArray_pose_mean.poses[i].position.x, stepsArray_pose_mean.poses[i].position.y);
+				
+				
+			}
+			first_detect_flag = false;
+		}
+		
+		
+		//plot out XY for step pos
+		if( (stepsArray_filtered.size() > 8) && (plot_flag == false)){
+			plot_flag = true;
+		}
+		
+		if(plot_flag == true && stop_plot == false) {
+			output_plot();
+			stop_plot = true;
+			
+	
+		}
 		
 			
-        
-		}
+		//====================================================================================
+		
 		
 		
 		 //remove from vector after publish to prevent infinitely increasing
@@ -544,6 +686,12 @@ int main(int argc, char **argv)
 		  {
 			stepsArray_pose.poses.pop_back();
 		  }
+		  
+		  while (!stepsArray_pose_mean.poses.empty())
+		  {
+			stepsArray_pose_mean.poses.pop_back();
+		  }
+		  
 		  
 		//flag to prevent camera callback repeating
 		pcloud_callback_done = true;
