@@ -100,6 +100,23 @@ target_link_libraries(green_plane_pose
 
 )
 
+add_executable(local_plane_pose src/local_plane_pose.cpp)
+add_dependencies(local_plane_pose ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(local_plane_pose
+    ${catkin_LIBRARIES}
+
+)
+
+
+add_executable(publish_upon_key_input src/publish_upon_key_input.cpp)
+add_dependencies(publish_upon_key_input ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(publish_upon_key_input
+    ${catkin_LIBRARIES}
+
+)
+
 #####################################
 # tracking node  #
 #####################################
